@@ -27,7 +27,6 @@ const years = Array.from({length: 100}, (_, i) => (new Date().getFullYear() - i)
 export function RegisterPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
-  const totalSteps = 6; // 5 steps + 1 final message
 
   // Auth State
   const [isOAuth, setIsOAuth] = useState(false);
@@ -37,6 +36,8 @@ export function RegisterPage() {
   const [phoneNumber, setPhoneNumber] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [enteredReferralCode, setEnteredReferralCode] = useState("");
+  
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [country, setCountry] = useState("");
@@ -51,15 +52,12 @@ export function RegisterPage() {
   const [reason, setReason] = useState("");
   const [workTime, setWorkTime] = useState("");
   const [source, setSource] = useState("");
-  const [enteredReferralCode, setEnteredReferralCode] = useState("");
-  const [showConfirmationPopup, setShowConfirmationPopup] = useState(false);
   
+  const [showConfirmationPopup, setShowConfirmationPopup] = useState(false);
   const [error, setError] = useState("");
 
-  // Check for existing session (Google OAuth redirect)
   useEffect(() => {
     const checkSession = async () => {
-      // Check for OAuth errors in URL
       const hashParams = new URLSearchParams(window.location.hash.substring(1));
       const searchParams = new URLSearchParams(window.location.search);
       const errorDesc = hashParams.get('error_description') || searchParams.get('error_description');
@@ -72,7 +70,6 @@ export function RegisterPage() {
 
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
-        // Check if user already completed registration
         const { data: user } = await supabase
           .from('users')
           .select('id')
@@ -80,34 +77,41 @@ export function RegisterPage() {
           .single();
         
         if (user) {
-          // Already fully registered
-          setStep(6);
+          setStep(8); // Already fully registered
         } else {
-          // Authenticated via OAuth but needs to complete profile
-          setIsOAuth(true);
+          // Authenticated but profile incomplete
+          setIsOAuth(!!session.user.app_metadata?.provider && session.user.app_metadata.provider !== 'email');
           setEmail(session.user.email || "");
           
-          // Pre-fill name if available from Google
+          // Restore from localStorage if available
+          const savedPhoneCountry = localStorage.getItem('reg_phoneCountry');
+          const savedPhoneNumber = localStorage.getItem('reg_phoneNumber');
+          const savedReferral = localStorage.getItem('reg_referralCode');
+          if (savedPhoneCountry) setPhoneCountry(savedPhoneCountry);
+          if (savedPhoneNumber) setPhoneNumber(savedPhoneNumber);
+          if (savedReferral) setEnteredReferralCode(savedReferral);
+
           const fullName = session.user.user_metadata?.full_name;
           if (fullName) {
             const nameParts = fullName.split(" ");
             if (nameParts.length > 0) setFirstName(nameParts[0]);
             if (nameParts.length > 1) setLastName(nameParts.slice(1).join(" "));
           }
+          
+          setStep(4);
+          setShowConfirmationPopup(false);
         }
       }
     };
     
     checkSession();
 
-    // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'SIGNED_IN') {
         checkSession();
       }
     });
 
-    // If this window is a popup, notify the parent and close
     if (window.opener) {
       setTimeout(() => {
         window.opener.postMessage({ type: 'OAUTH_SUCCESS' }, '*');
@@ -115,7 +119,6 @@ export function RegisterPage() {
       }, 1500);
     }
 
-    // Listen for messages from the popup
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === 'OAUTH_SUCCESS') {
         checkSession();
@@ -129,16 +132,31 @@ export function RegisterPage() {
     };
   }, []);
 
-  // Scroll to top when step changes
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [step]);
+
+  const getPasswordStrength = (pass: string) => {
+    let score = 0;
+    if (!pass) return { score: 0, color: 'bg-dark-800', width: '0%' };
+    if (pass.length >= 8) score += 1;
+    if (/[A-Z]/.test(pass) && /[a-z]/.test(pass)) score += 1;
+    if (/[0-9]/.test(pass)) score += 1;
+    if (/[!@#$%^&*(),.?":{}|<>]/.test(pass)) score += 1;
+
+    if (score === 1) return { score, color: 'bg-red-500', width: '25%' };
+    if (score === 2) return { score, color: 'bg-orange-500', width: '50%' };
+    if (score === 3) return { score, color: 'bg-yellow-500', width: '75%' };
+    if (score === 4) return { score, color: 'bg-green-500', width: '100%' };
+    return { score: 0, color: 'bg-red-500', width: '10%' };
+  };
+
+  const strength = getPasswordStrength(password);
 
   const validateStep = () => {
     setError("");
     if (step === 1) {
       if (!email || !phoneCountry || !phoneNumber) return "All fields are required.";
-      if (!isOAuth && (!password || !confirmPassword)) return "All fields are required.";
       if (!email.toLowerCase().endsWith("@gmail.com")) return "Only @gmail.com emails are allowed.";
       
       if (phoneCountry === "Pakistan") {
@@ -153,41 +171,95 @@ export function RegisterPage() {
       } else {
         if (phoneNumber.length < 8 || phoneNumber.length > 15) return "Please enter a valid phone number.";
       }
-
-      if (!isOAuth) {
-        if (password.length < 8) return "Password must be at least 8 characters long.";
-        if (!/[A-Z]/.test(password)) return "Password must contain at least one uppercase letter.";
-        if (!/[0-9]/.test(password)) return "Password must contain at least one number.";
-        if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) return "Password must contain at least one special character.";
-        if (password !== confirmPassword) return "Passwords do not match.";
-      }
     } else if (step === 2) {
+      if (password.length < 8) return "Password must be at least 8 characters long.";
+      if (!/[A-Z]/.test(password) || !/[a-z]/.test(password)) return "Password must contain uppercase and lowercase letters.";
+      if (!/[0-9]/.test(password)) return "Password must contain at least one number.";
+      if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) return "Password must contain at least one special character.";
+      if (password !== confirmPassword) return "Passwords do not match.";
+    } else if (step === 4) {
       if (!firstName || !lastName) return "All fields are required.";
-    } else if (step === 3) {
+    } else if (step === 5) {
       if (!country) return "Please select a country.";
       if (country === "Other" && !customCity) return "Please enter your city.";
       if (country !== "Other" && !city) return "Please select a city.";
       if (!postalCode) return "Please enter your postal code.";
-    } else if (step === 4) {
+    } else if (step === 6) {
       if (!day || !month || !year) return "Please complete your birthday.";
       if (!gender) return "Please select your gender.";
-    } else if (step === 5) {
+    } else if (step === 7) {
       if (!occupation || !reason || !workTime || !source) return "All fields are required.";
     }
     return "";
   };
 
-  const handleNextStep = () => {
+  const handleNextStep = async () => {
     const validationError = validateStep();
     if (validationError) {
       setError(validationError);
       return;
     }
     setError("");
-    setStep((prev) => Math.min(prev + 1, totalSteps));
+
+    if (step === 1) {
+      setIsLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('users')
+          .select('email')
+          .eq('email', email)
+          .maybeSingle();
+          
+        if (data) {
+          setError("Email already registered. Please download the app and login.");
+          setIsLoading(false);
+          return;
+        }
+      } catch (err) {
+        console.error("Error checking email:", err);
+      }
+      setIsLoading(false);
+    }
+
+    setStep((prev) => prev + 1);
   };
 
-  const handleRegister = async () => {
+  const handlePrevStep = () => {
+    setError("");
+    setStep((prev) => Math.max(prev - 1, 1));
+  };
+
+  const handleSignUp = async (skipReferral = false) => {
+    if (!skipReferral && enteredReferralCode && enteredReferralCode.length < 3) {
+       setError("Invalid referral code."); return;
+    }
+    setIsLoading(true);
+    setError("");
+    try {
+      localStorage.setItem('reg_phoneCountry', phoneCountry);
+      localStorage.setItem('reg_phoneNumber', phoneNumber);
+      if (!skipReferral) localStorage.setItem('reg_referralCode', enteredReferralCode);
+
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email,
+        password,
+      });
+      if (authError) throw authError;
+      if (!authData.user) throw new Error("Failed to create user account.");
+      
+      if (authData.user.identities && authData.user.identities.length === 0) {
+        throw new Error("Email already registered. Please download the app and login.");
+      }
+      
+      setShowConfirmationPopup(true);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleFinalize = async () => {
     const validationError = validateStep();
     if (validationError) {
       setError(validationError);
@@ -198,33 +270,13 @@ export function RegisterPage() {
     setError("");
     
     try {
-      let userId = "";
-      let avatarUrl = "";
-
-      if (isOAuth) {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) throw new Error("Authentication session lost. Please try again.");
-        userId = session.user.id;
-        avatarUrl = session.user.user_metadata?.avatar_url || "";
-      } else {
-        const { data: authData, error: authError } = await supabase.auth.signUp({
-          email,
-          password,
-        });
-        if (authError) throw authError;
-        if (!authData.user) throw new Error("Failed to create user account.");
-        
-        // Check if user already exists (Supabase returns empty identities array if email exists and confirm email is on)
-        if (authData.user.identities && authData.user.identities.length === 0) {
-          throw new Error("This email is already registered. Please log in instead.");
-        }
-        
-        userId = authData.user.id;
-      }
-
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Authentication session lost. Please try again.");
+      
+      const userId = session.user.id;
+      const avatarUrl = session.user.user_metadata?.avatar_url || "";
       const referralCode = enteredReferralCode || ('TV-' + Math.random().toString(36).substring(2, 8).toUpperCase());
 
-      // Format date correctly for PostgreSQL DATE type (YYYY-MM-DD)
       const monthIndex = months.indexOf(month) + 1;
       const formattedMonth = monthIndex < 10 ? `0${monthIndex}` : `${monthIndex}`;
       const formattedDay = parseInt(day) < 10 ? `0${day}` : day;
@@ -255,22 +307,19 @@ export function RegisterPage() {
         ]);
 
       if (dbError) {
-        console.error("Supabase DB Error:", dbError);
         if (dbError.message.includes('row-level security')) {
           console.warn("RLS Error during insert. User auth was created.");
-          // Don't throw error, let them proceed to the confirmation popup
         } else {
           throw new Error(`Database Error: ${dbError.message}. Please check your Supabase table schema.`);
         }
       }
 
-      if (!isOAuth) {
-        setShowConfirmationPopup(true);
-      } else {
-        setStep(6);
-      }
+      localStorage.removeItem('reg_phoneCountry');
+      localStorage.removeItem('reg_phoneNumber');
+      localStorage.removeItem('reg_referralCode');
+
+      setStep(8);
     } catch (err: any) {
-      console.error("Registration Error:", err);
       setError(err.message || "An error occurred during registration.");
     } finally {
       setIsLoading(false);
@@ -279,6 +328,9 @@ export function RegisterPage() {
 
   const handleGoogleLogin = async () => {
     try {
+      if (phoneCountry) localStorage.setItem('reg_phoneCountry', phoneCountry);
+      if (phoneNumber) localStorage.setItem('reg_phoneNumber', phoneNumber);
+      
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
@@ -289,11 +341,6 @@ export function RegisterPage() {
     } catch (err: any) {
       setError(err.message);
     }
-  };
-
-  const handlePrevStep = () => {
-    setError("");
-    setStep((prev) => Math.max(prev - 1, 1));
   };
 
   return (
@@ -328,7 +375,7 @@ export function RegisterPage() {
               <button 
                 onClick={() => {
                   setShowConfirmationPopup(false);
-                  setStep(6);
+                  setStep(4);
                 }}
                 className="text-gray-400 hover:text-white text-sm font-medium transition-colors"
               >
@@ -347,24 +394,6 @@ export function RegisterPage() {
 
       <div className="container mx-auto px-4 relative z-10">
         <div className="max-w-md mx-auto">
-          {/* Progress Bar */}
-          {step < totalSteps && (
-            <div className="mb-8">
-              <div className="flex justify-between text-sm text-gray-400 mb-2 font-medium">
-                <span>Step {step} of {totalSteps - 1}</span>
-                <span>{Math.round((step / (totalSteps - 1)) * 100)}%</span>
-              </div>
-              <div className="w-full h-2 bg-dark-800 rounded-full overflow-hidden">
-                <motion.div 
-                  className="h-full bg-gradient-primary rounded-full"
-                  initial={{ width: 0 }}
-                  animate={{ width: `${(step / (totalSteps - 1)) * 100}%` }}
-                  transition={{ duration: 0.3 }}
-                />
-              </div>
-            </div>
-          )}
-
           <div className="glass-card rounded-3xl p-8 relative overflow-hidden">
             <AnimatePresence mode="wait">
               {step === 1 && (
@@ -388,7 +417,7 @@ export function RegisterPage() {
                     </div>
                   )}
 
-                    <div className="space-y-4">
+                  <div className="space-y-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-300 mb-1.5">Email Address</label>
                       <div className="relative">
@@ -427,62 +456,27 @@ export function RegisterPage() {
                       </div>
                     </div>
                     
-                    {!isOAuth && (
-                      <>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-300 mb-1.5">Password</label>
-                          <div className="relative">
-                            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
-                            <input 
-                              type="password" 
-                              value={password}
-                              onChange={(e) => setPassword(e.target.value)}
-                              placeholder="••••••••" 
-                              className="w-full h-12 pl-11 pr-4 rounded-xl glass bg-dark-900/50 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors"
-                            />
-                          </div>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-300 mb-1.5">Confirm Password</label>
-                          <div className="relative">
-                            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
-                            <input 
-                              type="password" 
-                              value={confirmPassword}
-                              onChange={(e) => setConfirmPassword(e.target.value)}
-                              placeholder="••••••••" 
-                              className="w-full h-12 pl-11 pr-4 rounded-xl glass bg-dark-900/50 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors"
-                            />
-                          </div>
-                        </div>
-                      </>
-                    )}
+                    <div className="relative flex items-center py-2">
+                      <div className="flex-grow border-t border-white/10"></div>
+                      <span className="flex-shrink-0 mx-4 text-gray-500 text-sm">OR</span>
+                      <div className="flex-grow border-t border-white/10"></div>
+                    </div>
 
-                    {!isOAuth && (
-                      <>
-                        <div className="relative flex items-center py-2">
-                          <div className="flex-grow border-t border-white/10"></div>
-                          <span className="flex-shrink-0 mx-4 text-gray-500 text-sm">OR</span>
-                          <div className="flex-grow border-t border-white/10"></div>
-                        </div>
-
-                        <Button type="button" onClick={handleGoogleLogin} variant="secondary" className="w-full gap-3 bg-white text-dark-900 hover:bg-gray-100">
-                          <svg viewBox="0 0 24 24" width="20" height="20" xmlns="http://www.w3.org/2000/svg">
-                            <g transform="matrix(1, 0, 0, 1, 27.009001, -39.238998)">
-                              <path fill="#4285F4" d="M -3.264 51.509 C -3.264 50.719 -3.334 49.969 -3.454 49.239 L -14.754 49.239 L -14.754 53.749 L -8.284 53.749 C -8.574 55.229 -9.424 56.479 -10.684 57.329 L -10.684 60.329 L -6.824 60.329 C -4.564 58.239 -3.264 55.159 -3.264 51.509 Z"/>
-                              <path fill="#34A853" d="M -14.754 63.239 C -11.514 63.239 -8.804 62.159 -6.824 60.329 L -10.684 57.329 C -11.764 58.049 -13.134 58.489 -14.754 58.489 C -17.884 58.489 -20.534 56.379 -21.484 53.529 L -25.464 53.529 L -25.464 56.619 C -23.494 60.539 -19.444 63.239 -14.754 63.239 Z"/>
-                              <path fill="#FBBC05" d="M -21.484 53.529 C -21.734 52.809 -21.864 52.039 -21.864 51.239 C -21.864 50.439 -21.724 49.669 -21.484 48.949 L -21.484 45.859 L -25.464 45.859 C -26.284 47.479 -26.754 49.299 -26.754 51.239 C -26.754 53.179 -26.284 54.999 -25.464 56.619 L -21.484 53.529 Z"/>
-                              <path fill="#EA4335" d="M -14.754 43.989 C -12.984 43.989 -11.404 44.599 -10.154 45.789 L -6.734 42.369 C -8.804 40.429 -11.514 39.239 -14.754 39.239 C -19.444 39.239 -23.494 41.939 -25.464 45.859 L -21.484 48.949 C -20.534 46.099 -17.884 43.989 -14.754 43.989 Z"/>
-                            </g>
-                          </svg>
-                          Register with Google
-                        </Button>
-                      </>
-                    )}
+                    <Button type="button" onClick={handleGoogleLogin} variant="secondary" className="w-full gap-3 bg-white text-dark-900 hover:bg-gray-100">
+                      <svg viewBox="0 0 24 24" width="20" height="20" xmlns="http://www.w3.org/2000/svg">
+                        <g transform="matrix(1, 0, 0, 1, 27.009001, -39.238998)">
+                          <path fill="#4285F4" d="M -3.264 51.509 C -3.264 50.719 -3.334 49.969 -3.454 49.239 L -14.754 49.239 L -14.754 53.749 L -8.284 53.749 C -8.574 55.229 -9.424 56.479 -10.684 57.329 L -10.684 60.329 L -6.824 60.329 C -4.564 58.239 -3.264 55.159 -3.264 51.509 Z"/>
+                          <path fill="#34A853" d="M -14.754 63.239 C -11.514 63.239 -8.804 62.159 -6.824 60.329 L -10.684 57.329 C -11.764 58.049 -13.134 58.489 -14.754 58.489 C -17.884 58.489 -20.534 56.379 -21.484 53.529 L -25.464 53.529 L -25.464 56.619 C -23.494 60.539 -19.444 63.239 -14.754 63.239 Z"/>
+                          <path fill="#FBBC05" d="M -21.484 53.529 C -21.734 52.809 -21.864 52.039 -21.864 51.239 C -21.864 50.439 -21.724 49.669 -21.484 48.949 L -21.484 45.859 L -25.464 45.859 C -26.284 47.479 -26.754 49.299 -26.754 51.239 C -26.754 53.179 -26.284 54.999 -25.464 56.619 L -21.484 53.529 Z"/>
+                          <path fill="#EA4335" d="M -14.754 43.989 C -12.984 43.989 -11.404 44.599 -10.154 45.789 L -6.734 42.369 C -8.804 40.429 -11.514 39.239 -14.754 39.239 C -19.444 39.239 -23.494 41.939 -25.464 45.859 L -21.484 48.949 C -20.534 46.099 -17.884 43.989 -14.754 43.989 Z"/>
+                        </g>
+                      </svg>
+                      Register with Google
+                    </Button>
                   </div>
 
-                  <Button onClick={handleNextStep} className="w-full mt-2 gap-2">
-                    Next <ArrowRight size={18} />
+                  <Button onClick={handleNextStep} disabled={isLoading} className="w-full mt-2 gap-2">
+                    {isLoading ? "Checking..." : "Next"} <ArrowRight size={18} />
                   </Button>
                 </motion.div>
               )}
@@ -490,6 +484,124 @@ export function RegisterPage() {
               {step === 2 && (
                 <motion.div
                   key="step2"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.3 }}
+                  className="flex flex-col gap-6"
+                >
+                  <div className="text-center mb-4">
+                    <h2 className="text-2xl font-display font-bold mb-2">Secure Account</h2>
+                    <p className="text-gray-400 text-sm">Create a strong password to protect your earnings.</p>
+                  </div>
+
+                  {error && (
+                    <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 flex items-start gap-2 text-red-400 text-sm">
+                      <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
+                      <p>{error}</p>
+                    </div>
+                  )}
+
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-1.5">Password</label>
+                      <div className="relative">
+                        <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
+                        <input 
+                          type="password" 
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          placeholder="••••••••" 
+                          className="w-full h-12 pl-11 pr-4 rounded-xl glass bg-dark-900/50 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors"
+                        />
+                      </div>
+                      <div className="mt-2">
+                        <div className="flex justify-between text-xs text-gray-400 mb-1">
+                          <span>Password Strength</span>
+                          <span className={strength.score === 4 ? 'text-green-400' : strength.score >= 2 ? 'text-yellow-400' : 'text-red-400'}>
+                            {strength.score === 4 ? 'Strong' : strength.score >= 2 ? 'Fair' : 'Weak'}
+                          </span>
+                        </div>
+                        <div className="w-full h-1.5 bg-dark-800 rounded-full overflow-hidden">
+                          <div className={`h-full transition-all duration-300 ${strength.color}`} style={{ width: strength.width }}></div>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">Must contain uppercase, lowercase, number, and symbol.</p>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-1.5">Confirm Password</label>
+                      <div className="relative">
+                        <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
+                        <input 
+                          type="password" 
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          placeholder="••••••••" 
+                          className="w-full h-12 pl-11 pr-4 rounded-xl glass bg-dark-900/50 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 mt-2">
+                    <Button variant="outline" onClick={handlePrevStep} className="px-4">
+                      <ArrowLeft size={18} />
+                    </Button>
+                    <Button onClick={handleNextStep} className="flex-1 gap-2">
+                      Next <ArrowRight size={18} />
+                    </Button>
+                  </div>
+                </motion.div>
+              )}
+
+              {step === 3 && (
+                <motion.div
+                  key="step3"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.3 }}
+                  className="flex flex-col gap-6"
+                >
+                  <div className="text-center mb-4">
+                    <h2 className="text-2xl font-display font-bold mb-2">Referral Code</h2>
+                    <p className="text-gray-400 text-sm">Were you invited by a friend?</p>
+                  </div>
+
+                  {error && (
+                    <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 flex items-start gap-2 text-red-400 text-sm">
+                      <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
+                      <p>{error}</p>
+                    </div>
+                  )}
+
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-1.5">Referral Code (Optional)</label>
+                      <input 
+                        type="text" 
+                        value={enteredReferralCode}
+                        onChange={(e) => setEnteredReferralCode(e.target.value)}
+                        placeholder="Enter code if you have one" 
+                        className="w-full h-12 px-4 rounded-xl glass bg-dark-900/50 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 mt-2">
+                    <Button variant="outline" onClick={() => handleSignUp(true)} disabled={isLoading} className="flex-1">
+                      {isLoading ? "Loading..." : "Skip"}
+                    </Button>
+                    <Button onClick={() => handleSignUp(false)} disabled={isLoading} className="flex-1 gap-2">
+                      {isLoading ? "Loading..." : "Next"} <ArrowRight size={18} />
+                    </Button>
+                  </div>
+                </motion.div>
+              )}
+
+              {step === 4 && (
+                <motion.div
+                  key="step4"
                   initial={{ opacity: 0, x: 20 }}
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: -20 }}
@@ -532,19 +644,16 @@ export function RegisterPage() {
                   </div>
 
                   <div className="flex gap-3 mt-2">
-                    <Button variant="outline" onClick={handlePrevStep} className="px-4">
-                      <ArrowLeft size={18} />
-                    </Button>
-                    <Button onClick={handleNextStep} className="flex-1 gap-2">
+                    <Button onClick={handleNextStep} className="w-full gap-2">
                       Next <ArrowRight size={18} />
                     </Button>
                   </div>
                 </motion.div>
               )}
 
-              {step === 3 && (
+              {step === 5 && (
                 <motion.div
-                  key="step3"
+                  key="step5"
                   initial={{ opacity: 0, x: 20 }}
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: -20 }}
@@ -617,9 +726,9 @@ export function RegisterPage() {
                 </motion.div>
               )}
 
-              {step === 4 && (
+              {step === 6 && (
                 <motion.div
-                  key="step4"
+                  key="step6"
                   initial={{ opacity: 0, x: 20 }}
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: -20 }}
@@ -669,9 +778,9 @@ export function RegisterPage() {
                 </motion.div>
               )}
 
-              {step === 5 && (
+              {step === 7 && (
                 <motion.div
-                  key="step5"
+                  key="step7"
                   initial={{ opacity: 0, x: 20 }}
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: -20 }}
@@ -745,32 +854,22 @@ export function RegisterPage() {
                         placeholder="Select source" 
                       />
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-1.5">Referral Code (Optional)</label>
-                      <input 
-                        type="text" 
-                        value={enteredReferralCode}
-                        onChange={(e) => setEnteredReferralCode(e.target.value)}
-                        placeholder="Enter code if you have one" 
-                        className="w-full h-12 px-4 rounded-xl glass bg-dark-900/50 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors"
-                      />
-                    </div>
                   </div>
 
                   <div className="flex gap-3 mt-2">
                     <Button variant="outline" onClick={handlePrevStep} disabled={isLoading} className="px-4">
                       <ArrowLeft size={18} />
                     </Button>
-                    <Button onClick={handleRegister} disabled={isLoading} className="flex-1 gap-2">
+                    <Button onClick={handleFinalize} disabled={isLoading} className="flex-1 gap-2">
                       {isLoading ? "Registering..." : "Complete Registration"} <ArrowRight size={18} />
                     </Button>
                   </div>
                 </motion.div>
               )}
 
-              {step === 6 && (
+              {step === 8 && (
                 <motion.div
-                  key="step6"
+                  key="step8"
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ duration: 0.5, type: "spring" }}
