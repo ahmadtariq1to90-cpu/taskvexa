@@ -1,0 +1,724 @@
+import { useState, useEffect } from "react";
+import { motion, AnimatePresence } from "motion/react";
+import { Button } from "../components/ui/Button";
+import { ArrowRight, ArrowLeft, Mail, Lock, CheckCircle2, AlertCircle } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { CustomSelect } from "../components/ui/CustomSelect";
+import { supabase } from "../lib/supabase";
+
+const locationData: Record<string, string[]> = {
+  "Pakistan": ["Karachi", "Lahore", "Islamabad", "Rawalpindi", "Faisalabad", "Multan", "Peshawar", "Quetta", "Sialkot", "Gujranwala", "Hyderabad", "Abbottabad", "Bahawalpur", "Sargodha", "Sukkur", "Larkana", "Sheikhupura", "Jhang", "Rahim Yar Khan", "Gujrat"],
+  "India": ["Mumbai", "Delhi", "Bangalore", "Hyderabad", "Chennai", "Kolkata", "Surat", "Pune", "Jaipur", "Ahmedabad", "Lucknow", "Kanpur", "Nagpur", "Indore", "Thane", "Bhopal", "Visakhapatnam", "Pimpri-Chinchwad", "Patna", "Vadodara"],
+  "United States": ["New York", "Los Angeles", "Chicago", "Houston", "Phoenix", "Philadelphia", "San Antonio", "San Diego", "Dallas", "San Jose", "Austin", "Jacksonville", "Fort Worth", "Columbus", "San Francisco", "Charlotte", "Indianapolis", "Seattle", "Denver", "Washington"],
+  "United Kingdom": ["London", "Birmingham", "Manchester", "Glasgow", "Liverpool", "Bristol", "Sheffield", "Leeds", "Edinburgh", "Leicester", "Coventry", "Bradford", "Cardiff", "Belfast", "Nottingham", "Derby", "Southampton", "Portsmouth", "Plymouth", "Reading"],
+  "Canada": ["Toronto", "Montreal", "Vancouver", "Calgary", "Edmonton", "Ottawa", "Winnipeg", "Quebec City", "Hamilton", "Kitchener", "London", "Victoria", "Halifax", "Oshawa", "Windsor", "Saskatoon", "Regina", "St. John's", "Barrie", "Kelowna"],
+  "Australia": ["Sydney", "Melbourne", "Brisbane", "Perth", "Adelaide", "Gold Coast", "Newcastle", "Canberra", "Sunshine Coast", "Wollongong", "Geelong", "Hobart", "Townsville", "Cairns", "Darwin", "Toowoomba", "Ballarat", "Bendigo", "Albury", "Launceston"],
+  "Germany": ["Berlin", "Munich", "Frankfurt", "Hamburg", "Cologne", "Stuttgart", "Düsseldorf", "Leipzig", "Dortmund", "Essen", "Bremen", "Dresden", "Hanover", "Nuremberg", "Duisburg", "Bochum", "Wuppertal", "Bielefeld", "Bonn", "Münster"],
+  "France": ["Paris", "Marseille", "Lyon", "Toulouse", "Nice", "Nantes", "Strasbourg", "Montpellier", "Bordeaux", "Lille", "Rennes", "Reims", "Le Havre", "Saint-Étienne", "Toulon", "Grenoble", "Dijon", "Nîmes", "Angers", "Villeurbanne"],
+  "Brazil": ["São Paulo", "Rio de Janeiro", "Brasília", "Salvador", "Fortaleza", "Belo Horizonte", "Manaus", "Curitiba", "Recife", "Goiânia", "Belém", "Porto Alegre", "Guarulhos", "Campinas", "São Luís", "São Gonçalo", "Maceió", "Duque de Caxias", "Natal", "Teresina"],
+  "Japan": ["Tokyo", "Yokohama", "Osaka", "Nagoya", "Sapporo", "Fukuoka", "Kobe", "Kyoto", "Kawasaki", "Saitama", "Hiroshima", "Sendai", "Kitakyushu", "Chiba", "Sakai", "Niigata", "Hamamatsu", "Kumamoto", "Sagamihara", "Shizuoka"],
+  "Other": []
+};
+
+const days = Array.from({length: 31}, (_, i) => (i + 1).toString());
+const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const years = Array.from({length: 100}, (_, i) => (new Date().getFullYear() - i).toString());
+
+export function RegisterPage() {
+  const navigate = useNavigate();
+  const [step, setStep] = useState(1);
+  const totalSteps = 6; // 5 steps + 1 final message
+
+  // Auth State
+  const [isOAuth, setIsOAuth] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [email, setEmail] = useState("");
+  const [phoneCountry, setPhoneCountry] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [country, setCountry] = useState("");
+  const [city, setCity] = useState("");
+  const [customCity, setCustomCity] = useState("");
+  const [postalCode, setPostalCode] = useState("");
+  const [day, setDay] = useState("");
+  const [month, setMonth] = useState("");
+  const [year, setYear] = useState("");
+  const [gender, setGender] = useState("");
+  const [occupation, setOccupation] = useState("");
+  const [reason, setReason] = useState("");
+  const [workTime, setWorkTime] = useState("");
+  const [source, setSource] = useState("");
+  
+  const [error, setError] = useState("");
+
+  // Check for existing session (Google OAuth redirect)
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        // Check if user already completed registration
+        const { data: user } = await supabase
+          .from('users')
+          .select('id')
+          .eq('id', session.user.id)
+          .single();
+        
+        if (user) {
+          // Already fully registered
+          setStep(6);
+        } else {
+          // Authenticated via OAuth but needs to complete profile
+          setIsOAuth(true);
+          setEmail(session.user.email || "");
+          
+          // Pre-fill name if available from Google
+          const fullName = session.user.user_metadata?.full_name;
+          if (fullName) {
+            const nameParts = fullName.split(" ");
+            if (nameParts.length > 0) setFirstName(nameParts[0]);
+            if (nameParts.length > 1) setLastName(nameParts.slice(1).join(" "));
+          }
+        }
+      }
+    };
+    
+    checkSession();
+
+    // Listen for auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_IN') {
+        checkSession();
+      }
+    });
+
+    // If this window is a popup, notify the parent and close
+    if (window.opener) {
+      setTimeout(() => {
+        window.opener.postMessage({ type: 'OAUTH_SUCCESS' }, '*');
+        window.close();
+      }, 1500);
+    }
+
+    // Listen for messages from the popup
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'OAUTH_SUCCESS') {
+        checkSession();
+      }
+    };
+    window.addEventListener('message', handleMessage);
+
+    return () => {
+      subscription.unsubscribe();
+      window.removeEventListener('message', handleMessage);
+    };
+  }, []);
+
+  // Scroll to top when step changes
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [step]);
+
+  const validateStep = () => {
+    setError("");
+    if (step === 1) {
+      if (!email || !phoneCountry || !phoneNumber) return "All fields are required.";
+      if (!isOAuth && (!password || !confirmPassword)) return "All fields are required.";
+      if (!email.toLowerCase().endsWith("@gmail.com")) return "Only @gmail.com emails are allowed.";
+      
+      if (phoneCountry === "Pakistan") {
+        if (!phoneNumber.startsWith("03")) return "Pakistan phone numbers must start with 03.";
+        if (phoneNumber.length !== 11) return "Pakistan phone numbers must be exactly 11 digits.";
+      } else if (phoneCountry === "India") {
+        if (!/^[6-9]/.test(phoneNumber)) return "India phone numbers must start with 6, 7, 8, or 9.";
+        if (phoneNumber.length !== 10) return "India phone numbers must be exactly 10 digits.";
+      } else if (phoneCountry === "United States" || phoneCountry === "Canada") {
+        if (!/^[1]/.test(phoneNumber)) return "US/Canada phone numbers must start with 1.";
+        if (phoneNumber.length !== 11) return "US/Canada phone numbers must be exactly 11 digits (including 1).";
+      } else {
+        if (phoneNumber.length < 8 || phoneNumber.length > 15) return "Please enter a valid phone number.";
+      }
+
+      if (!isOAuth) {
+        if (password.length < 8) return "Password must be at least 8 characters long.";
+        if (!/[A-Z]/.test(password)) return "Password must contain at least one uppercase letter.";
+        if (!/[0-9]/.test(password)) return "Password must contain at least one number.";
+        if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) return "Password must contain at least one special character.";
+        if (password !== confirmPassword) return "Passwords do not match.";
+      }
+    } else if (step === 2) {
+      if (!firstName || !lastName) return "All fields are required.";
+    } else if (step === 3) {
+      if (!country) return "Please select a country.";
+      if (country === "Other" && !customCity) return "Please enter your city.";
+      if (country !== "Other" && !city) return "Please select a city.";
+      if (!postalCode) return "Please enter your postal code.";
+    } else if (step === 4) {
+      if (!day || !month || !year) return "Please complete your birthday.";
+      if (!gender) return "Please select your gender.";
+    } else if (step === 5) {
+      if (!occupation || !reason || !workTime || !source) return "All fields are required.";
+    }
+    return "";
+  };
+
+  const handleNextStep = () => {
+    const validationError = validateStep();
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+    setError("");
+    setStep((prev) => Math.min(prev + 1, totalSteps));
+  };
+
+  const handleRegister = async () => {
+    const validationError = validateStep();
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+    
+    setIsLoading(true);
+    setError("");
+    
+    try {
+      let userId = "";
+      let avatarUrl = "";
+
+      if (isOAuth) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) throw new Error("Authentication session lost. Please try again.");
+        userId = session.user.id;
+        avatarUrl = session.user.user_metadata?.avatar_url || "";
+      } else {
+        const { data: authData, error: authError } = await supabase.auth.signUp({
+          email,
+          password,
+        });
+        if (authError) throw authError;
+        if (!authData.user) throw new Error("Failed to create user account.");
+        
+        // Check if user already exists (Supabase returns empty identities array if email exists and confirm email is on)
+        if (authData.user.identities && authData.user.identities.length === 0) {
+          throw new Error("This email is already registered. Please log in instead.");
+        }
+        
+        userId = authData.user.id;
+      }
+
+      const referralCode = 'TV-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+
+      // Format date correctly for PostgreSQL DATE type (YYYY-MM-DD)
+      const monthIndex = months.indexOf(month) + 1;
+      const formattedMonth = monthIndex < 10 ? `0${monthIndex}` : `${monthIndex}`;
+      const formattedDay = parseInt(day) < 10 ? `0${day}` : day;
+      const formattedDate = `${year}-${formattedMonth}-${formattedDay}`;
+
+      const { error: dbError } = await supabase
+        .from('users')
+        .insert([
+          {
+            id: userId,
+            first_name: firstName,
+            last_name: lastName,
+            email: email,
+            phone_country: phoneCountry,
+            phone_number: phoneNumber,
+            country: country,
+            city: country === "Other" ? customCity : city,
+            postal_code: postalCode,
+            date_of_birth: formattedDate,
+            gender: gender,
+            avatar_url: avatarUrl,
+            referral_code: referralCode,
+            occupation: occupation,
+            reason: reason,
+            work_time: workTime,
+            source: source
+          }
+        ]);
+
+      if (dbError) {
+        console.error("Supabase DB Error:", dbError);
+        throw new Error(`Database Error: ${dbError.message}. Please check your Supabase table schema.`);
+      }
+
+      setStep(6);
+    } catch (err: any) {
+      console.error("Registration Error:", err);
+      setError(err.message || "An error occurred during registration.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin + '/',
+        }
+      });
+      if (error) throw error;
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const handlePrevStep = () => {
+    setError("");
+    setStep((prev) => Math.max(prev - 1, 1));
+  };
+
+  return (
+    <div className="min-h-screen pt-24 pb-12 flex items-center justify-center relative overflow-hidden">
+      {/* Static Background to prevent lag */}
+      <div className="absolute inset-0 z-0">
+        <div className="absolute top-1/4 left-1/4 w-[400px] h-[400px] bg-brand-500/20 rounded-full blur-[80px]" />
+        <div className="absolute bottom-1/4 right-1/4 w-[400px] h-[400px] bg-blue-500/20 rounded-full blur-[80px]" />
+      </div>
+
+      <div className="container mx-auto px-4 relative z-10">
+        <div className="max-w-md mx-auto">
+          {/* Progress Bar */}
+          {step < totalSteps && (
+            <div className="mb-8">
+              <div className="flex justify-between text-sm text-gray-400 mb-2 font-medium">
+                <span>Step {step} of {totalSteps - 1}</span>
+                <span>{Math.round((step / (totalSteps - 1)) * 100)}%</span>
+              </div>
+              <div className="w-full h-2 bg-dark-800 rounded-full overflow-hidden">
+                <motion.div 
+                  className="h-full bg-gradient-primary rounded-full"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${(step / (totalSteps - 1)) * 100}%` }}
+                  transition={{ duration: 0.3 }}
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="glass-card rounded-3xl p-8 relative overflow-hidden">
+            <AnimatePresence mode="wait">
+              {step === 1 && (
+                <motion.div
+                  key="step1"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.3 }}
+                  className="flex flex-col gap-6"
+                >
+                  <div className="text-center mb-4">
+                    <h2 className="text-2xl font-display font-bold mb-2">Create Account</h2>
+                    <p className="text-gray-400 text-sm">Join Taskvexa and start making money today.</p>
+                  </div>
+
+                  {error && (
+                    <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 flex items-start gap-2 text-red-400 text-sm">
+                      <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
+                      <p>{error}</p>
+                    </div>
+                  )}
+
+                    <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-1.5">Email Address</label>
+                      <div className="relative">
+                        <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
+                        <input 
+                          type="email" 
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          disabled={isOAuth}
+                          placeholder="you@gmail.com" 
+                          className={`w-full h-12 pl-11 pr-4 rounded-xl glass bg-dark-900/50 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors ${isOAuth ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-1.5">Phone Number</label>
+                      <div className="flex gap-2">
+                        <div className="w-1/3">
+                          <CustomSelect 
+                            options={Object.keys(locationData)} 
+                            value={phoneCountry} 
+                            onChange={setPhoneCountry} 
+                            placeholder="Country" 
+                          />
+                        </div>
+                        <div className="w-2/3 relative">
+                          <input 
+                            type="tel" 
+                            value={phoneNumber}
+                            onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, ''))}
+                            maxLength={phoneCountry === "Pakistan" ? 11 : (phoneCountry === "India" ? 10 : (phoneCountry === "United States" || phoneCountry === "Canada" ? 11 : 15))}
+                            placeholder={phoneCountry === "Pakistan" ? "03XXXXXXXXX" : "Phone Number"} 
+                            className="w-full h-12 px-4 rounded-xl glass bg-dark-900/50 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {!isOAuth && (
+                      <>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-300 mb-1.5">Password</label>
+                          <div className="relative">
+                            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
+                            <input 
+                              type="password" 
+                              value={password}
+                              onChange={(e) => setPassword(e.target.value)}
+                              placeholder="••••••••" 
+                              className="w-full h-12 pl-11 pr-4 rounded-xl glass bg-dark-900/50 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-300 mb-1.5">Confirm Password</label>
+                          <div className="relative">
+                            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
+                            <input 
+                              type="password" 
+                              value={confirmPassword}
+                              onChange={(e) => setConfirmPassword(e.target.value)}
+                              placeholder="••••••••" 
+                              className="w-full h-12 pl-11 pr-4 rounded-xl glass bg-dark-900/50 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors"
+                            />
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                    {!isOAuth && (
+                      <>
+                        <div className="relative flex items-center py-2">
+                          <div className="flex-grow border-t border-white/10"></div>
+                          <span className="flex-shrink-0 mx-4 text-gray-500 text-sm">OR</span>
+                          <div className="flex-grow border-t border-white/10"></div>
+                        </div>
+
+                        <Button type="button" onClick={handleGoogleLogin} variant="secondary" className="w-full gap-3 bg-white text-dark-900 hover:bg-gray-100">
+                          <svg viewBox="0 0 24 24" width="20" height="20" xmlns="http://www.w3.org/2000/svg">
+                            <g transform="matrix(1, 0, 0, 1, 27.009001, -39.238998)">
+                              <path fill="#4285F4" d="M -3.264 51.509 C -3.264 50.719 -3.334 49.969 -3.454 49.239 L -14.754 49.239 L -14.754 53.749 L -8.284 53.749 C -8.574 55.229 -9.424 56.479 -10.684 57.329 L -10.684 60.329 L -6.824 60.329 C -4.564 58.239 -3.264 55.159 -3.264 51.509 Z"/>
+                              <path fill="#34A853" d="M -14.754 63.239 C -11.514 63.239 -8.804 62.159 -6.824 60.329 L -10.684 57.329 C -11.764 58.049 -13.134 58.489 -14.754 58.489 C -17.884 58.489 -20.534 56.379 -21.484 53.529 L -25.464 53.529 L -25.464 56.619 C -23.494 60.539 -19.444 63.239 -14.754 63.239 Z"/>
+                              <path fill="#FBBC05" d="M -21.484 53.529 C -21.734 52.809 -21.864 52.039 -21.864 51.239 C -21.864 50.439 -21.724 49.669 -21.484 48.949 L -21.484 45.859 L -25.464 45.859 C -26.284 47.479 -26.754 49.299 -26.754 51.239 C -26.754 53.179 -26.284 54.999 -25.464 56.619 L -21.484 53.529 Z"/>
+                              <path fill="#EA4335" d="M -14.754 43.989 C -12.984 43.989 -11.404 44.599 -10.154 45.789 L -6.734 42.369 C -8.804 40.429 -11.514 39.239 -14.754 39.239 C -19.444 39.239 -23.494 41.939 -25.464 45.859 L -21.484 48.949 C -20.534 46.099 -17.884 43.989 -14.754 43.989 Z"/>
+                            </g>
+                          </svg>
+                          Register with Google
+                        </Button>
+                      </>
+                    )}
+                  </div>
+
+                  <Button onClick={handleNextStep} className="w-full mt-2 gap-2">
+                    Next <ArrowRight size={18} />
+                  </Button>
+                </motion.div>
+              )}
+
+              {step === 2 && (
+                <motion.div
+                  key="step2"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.3 }}
+                  className="flex flex-col gap-6"
+                >
+                  <div className="text-center mb-4">
+                    <h2 className="text-2xl font-display font-bold mb-2">Personal Details</h2>
+                    <p className="text-gray-400 text-sm">Tell us your name to personalize your experience.</p>
+                  </div>
+
+                  {error && (
+                    <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 flex items-start gap-2 text-red-400 text-sm">
+                      <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
+                      <p>{error}</p>
+                    </div>
+                  )}
+
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-1.5">First Name</label>
+                      <input 
+                        type="text" 
+                        value={firstName}
+                        onChange={(e) => setFirstName(e.target.value)}
+                        placeholder="John" 
+                        className="w-full h-12 px-4 rounded-xl glass bg-dark-900/50 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-1.5">Last Name</label>
+                      <input 
+                        type="text" 
+                        value={lastName}
+                        onChange={(e) => setLastName(e.target.value)}
+                        placeholder="Doe" 
+                        className="w-full h-12 px-4 rounded-xl glass bg-dark-900/50 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 mt-2">
+                    <Button variant="outline" onClick={handlePrevStep} className="px-4">
+                      <ArrowLeft size={18} />
+                    </Button>
+                    <Button onClick={handleNextStep} className="flex-1 gap-2">
+                      Next <ArrowRight size={18} />
+                    </Button>
+                  </div>
+                </motion.div>
+              )}
+
+              {step === 3 && (
+                <motion.div
+                  key="step3"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.3 }}
+                  className="flex flex-col gap-6"
+                >
+                  <div className="text-center mb-4">
+                    <h2 className="text-2xl font-display font-bold mb-2">Location</h2>
+                    <p className="text-gray-400 text-sm">Where are you from? This helps us find relevant tasks.</p>
+                  </div>
+
+                  {error && (
+                    <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 flex items-start gap-2 text-red-400 text-sm">
+                      <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
+                      <p>{error}</p>
+                    </div>
+                  )}
+
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-1.5">Country</label>
+                      <CustomSelect 
+                        options={Object.keys(locationData)} 
+                        value={country} 
+                        onChange={(val) => { setCountry(val); setCity(""); setCustomCity(""); }} 
+                        placeholder="Select Country" 
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-1.5">City</label>
+                        {country === "Other" ? (
+                          <input 
+                            type="text" 
+                            value={customCity}
+                            onChange={(e) => setCustomCity(e.target.value)}
+                            placeholder="Enter City" 
+                            className="w-full h-12 px-4 rounded-xl glass bg-dark-900/50 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors"
+                          />
+                        ) : (
+                          <CustomSelect 
+                            options={country ? locationData[country] : []} 
+                            value={city} 
+                            onChange={setCity} 
+                            placeholder="Select City" 
+                          />
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-1.5">Postal / ZIP Code</label>
+                        <input 
+                          type="text" 
+                          value={postalCode}
+                          onChange={(e) => setPostalCode(e.target.value)}
+                          placeholder="10001" 
+                          className="w-full h-12 px-4 rounded-xl glass bg-dark-900/50 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 mt-2">
+                    <Button variant="outline" onClick={handlePrevStep} className="px-4">
+                      <ArrowLeft size={18} />
+                    </Button>
+                    <Button onClick={handleNextStep} className="flex-1 gap-2">
+                      Next <ArrowRight size={18} />
+                    </Button>
+                  </div>
+                </motion.div>
+              )}
+
+              {step === 4 && (
+                <motion.div
+                  key="step4"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.3 }}
+                  className="flex flex-col gap-6"
+                >
+                  <div className="text-center mb-4">
+                    <h2 className="text-2xl font-display font-bold mb-2">Demographics</h2>
+                    <p className="text-gray-400 text-sm">Just a few more details to set up your profile.</p>
+                  </div>
+
+                  {error && (
+                    <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 flex items-start gap-2 text-red-400 text-sm">
+                      <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
+                      <p>{error}</p>
+                    </div>
+                  )}
+
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-1.5">Birthday</label>
+                      <div className="grid grid-cols-3 gap-2">
+                        <CustomSelect options={days} value={day} onChange={setDay} placeholder="Day" />
+                        <CustomSelect options={months} value={month} onChange={setMonth} placeholder="Month" />
+                        <CustomSelect options={years} value={year} onChange={setYear} placeholder="Year" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-1.5">Gender</label>
+                      <CustomSelect 
+                        options={["Male", "Female", "Other", "Prefer not to say"]} 
+                        value={gender} 
+                        onChange={setGender} 
+                        placeholder="Select Gender" 
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 mt-2">
+                    <Button variant="outline" onClick={handlePrevStep} className="px-4">
+                      <ArrowLeft size={18} />
+                    </Button>
+                    <Button onClick={handleNextStep} className="flex-1 gap-2">
+                      Next <ArrowRight size={18} />
+                    </Button>
+                  </div>
+                </motion.div>
+              )}
+
+              {step === 5 && (
+                <motion.div
+                  key="step5"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.3 }}
+                  className="flex flex-col gap-6"
+                >
+                  <div className="text-center mb-4">
+                    <h2 className="text-2xl font-display font-bold mb-2">Personal Questions</h2>
+                    <p className="text-gray-400 text-sm">Help us understand your goals.</p>
+                  </div>
+
+                  {error && (
+                    <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 flex items-start gap-2 text-red-400 text-sm">
+                      <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
+                      <p>{error}</p>
+                    </div>
+                  )}
+
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-1.5">What do you do?</label>
+                      <CustomSelect 
+                        options={["Student", "Employed", "Freelancer", "Unemployed", "Other"]} 
+                        value={occupation} 
+                        onChange={setOccupation} 
+                        placeholder="Select occupation" 
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-1.5">Why did you join this app?</label>
+                      <CustomSelect 
+                        options={["To earn extra income", "To kill free time", "To try something new", "Other"]} 
+                        value={reason} 
+                        onChange={setReason} 
+                        placeholder="Select reason" 
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-1.5">How much time will you work?</label>
+                      <div className="grid grid-cols-2 gap-3">
+                        <label className="flex items-center justify-center gap-2 h-12 rounded-xl glass bg-dark-900/50 border border-white/10 cursor-pointer hover:bg-white/5 transition-colors has-[:checked]:border-brand-500 has-[:checked]:bg-brand-500/10">
+                          <input 
+                            type="radio" 
+                            name="workTime" 
+                            value="part-time" 
+                            checked={workTime === "part-time"}
+                            onChange={() => setWorkTime("part-time")}
+                            className="hidden" 
+                          />
+                          <span className="text-sm font-medium">Part-time</span>
+                        </label>
+                        <label className="flex items-center justify-center gap-2 h-12 rounded-xl glass bg-dark-900/50 border border-white/10 cursor-pointer hover:bg-white/5 transition-colors has-[:checked]:border-brand-500 has-[:checked]:bg-brand-500/10">
+                          <input 
+                            type="radio" 
+                            name="workTime" 
+                            value="full-time" 
+                            checked={workTime === "full-time"}
+                            onChange={() => setWorkTime("full-time")}
+                            className="hidden" 
+                          />
+                          <span className="text-sm font-medium">Full-time</span>
+                        </label>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-1.5">Where did you hear about this app?</label>
+                      <CustomSelect 
+                        options={["Social Media", "Friend / Family", "Search Engine", "Advertisement", "Other"]} 
+                        value={source} 
+                        onChange={setSource} 
+                        placeholder="Select source" 
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 mt-2">
+                    <Button variant="outline" onClick={handlePrevStep} disabled={isLoading} className="px-4">
+                      <ArrowLeft size={18} />
+                    </Button>
+                    <Button onClick={handleRegister} disabled={isLoading} className="flex-1 gap-2">
+                      {isLoading ? "Registering..." : "Complete Registration"} <ArrowRight size={18} />
+                    </Button>
+                  </div>
+                </motion.div>
+              )}
+
+              {step === 6 && (
+                <motion.div
+                  key="step6"
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.5, type: "spring" }}
+                  className="flex flex-col items-center text-center py-8"
+                >
+                  <div className="w-20 h-20 rounded-full bg-green-500/20 flex items-center justify-center mb-6">
+                    <CheckCircle2 size={40} className="text-green-400" />
+                  </div>
+                  <h2 className="text-3xl font-display font-bold mb-4">Registration Complete!</h2>
+                  <p className="text-gray-300 text-lg mb-8 leading-relaxed">
+                    "Congratulations! You are now part of our family. Download the application, log in, and start earning."
+                  </p>
+                  <Link to="/" className="w-full">
+                    <Button className="w-full">Return to Home</Button>
+                  </Link>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
