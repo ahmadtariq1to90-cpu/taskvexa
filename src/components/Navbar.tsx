@@ -15,14 +15,31 @@ export function Navbar() {
   const location = useLocation();
 
   useEffect(() => {
+    const checkUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (error || !user) {
+          await supabase.auth.signOut();
+          setSession(null);
+        } else {
+          setSession(session);
+        }
+      } else {
+        setSession(null);
+      }
+    };
+
     // Check initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-    });
+    checkUser();
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
+      if (session) {
+        checkUser();
+      } else {
+        setSession(null);
+      }
     });
 
     return () => subscription.unsubscribe();

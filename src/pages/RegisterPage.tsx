@@ -71,6 +71,12 @@ export function RegisterPage() {
 
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
+        const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
+        if (authError || !authUser) {
+          await supabase.auth.signOut();
+          return;
+        }
+
         const { data: user } = await supabase
           .from('users')
           .select('id')
@@ -285,7 +291,7 @@ export function RegisterPage() {
 
       const { error: dbError } = await supabase
         .from('users')
-        .insert([
+        .upsert([
           {
             id: userId,
             first_name: firstName,
@@ -308,11 +314,7 @@ export function RegisterPage() {
         ]);
 
       if (dbError) {
-        if (dbError.message.includes('row-level security')) {
-          console.warn("RLS Error during insert. User auth was created.");
-        } else {
-          throw new Error(`Database Error: ${dbError.message}. Please check your Supabase table schema.`);
-        }
+        throw new Error(`Database Error: ${dbError.message}. Please check your Supabase table schema or RLS policies.`);
       }
 
       localStorage.removeItem('reg_phoneCountry');

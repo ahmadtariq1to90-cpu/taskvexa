@@ -53,6 +53,12 @@ export function LandingPage() {
       const { data: { session } } = await supabase.auth.getSession();
       
       if (session) {
+        const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
+        if (authError || !authUser) {
+          await supabase.auth.signOut();
+          return;
+        }
+
         // Check if user is already in our users table
         const { data: user } = await supabase
           .from('users')
