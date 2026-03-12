@@ -54,6 +54,7 @@ export function RegisterPage() {
   const [source, setSource] = useState("");
   
   const [showConfirmationPopup, setShowConfirmationPopup] = useState(false);
+  const [isAlreadyRegistered, setIsAlreadyRegistered] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -74,10 +75,10 @@ export function RegisterPage() {
           .from('users')
           .select('id')
           .eq('id', session.user.id)
-          .single();
+          .maybeSingle();
         
         if (user) {
-          setStep(8); // Already fully registered
+          setIsAlreadyRegistered(true);
         } else {
           // Authenticated but profile incomplete
           setIsOAuth(!!session.user.app_metadata?.provider && session.user.app_metadata.provider !== 'email');
@@ -207,11 +208,11 @@ export function RegisterPage() {
         const { data, error } = await supabase
           .from('users')
           .select('email')
-          .eq('email', email)
+          .ilike('email', email)
           .maybeSingle();
           
         if (data) {
-          setError("Email already registered. Please download the app and login.");
+          setError("This email is already registered. Please download the app and login.");
           setIsLoading(false);
           return;
         }
@@ -345,8 +346,27 @@ export function RegisterPage() {
 
   return (
     <div className="min-h-screen pt-24 pb-12 flex items-center justify-center relative overflow-hidden">
-      {/* Email Confirmation Popup */}
-      <AnimatePresence>
+      {isAlreadyRegistered ? (
+        <div className="container mx-auto px-4 relative z-10">
+          <div className="max-w-md mx-auto">
+            <div className="glass-card rounded-3xl p-8 relative overflow-hidden text-center">
+              <div className="w-20 h-20 rounded-full bg-brand-500/20 flex items-center justify-center mx-auto mb-6">
+                <AlertCircle size={40} className="text-brand-400" />
+              </div>
+              <h2 className="text-2xl font-display font-bold mb-4">Already Registered</h2>
+              <p className="text-gray-300 mb-8">
+                You are already registered. Please download the app and login.
+              </p>
+              <Link to="/">
+                <Button className="w-full">Return to Home</Button>
+              </Link>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Email Confirmation Popup */}
+          <AnimatePresence>
         {showConfirmationPopup && (
           <motion.div
             initial={{ opacity: 0 }}
@@ -891,6 +911,8 @@ export function RegisterPage() {
           </div>
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 }
