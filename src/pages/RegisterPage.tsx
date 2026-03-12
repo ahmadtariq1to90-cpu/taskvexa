@@ -258,9 +258,18 @@ export function RegisterPage() {
         throw new Error("Email already registered. Please download the app and login.");
       }
       
-      setShowConfirmationPopup(true);
+      if (authData.session) {
+        // Email confirmation is disabled in Supabase, user is logged in
+        setStep(4);
+      } else {
+        setShowConfirmationPopup(true);
+      }
     } catch (err: any) {
-      setError(err.message);
+      if (err.message?.includes("Error sending confirmation email") || err.message?.includes("rate limit")) {
+        setError("Supabase email limit reached. Please disable 'Confirm Email' in your Supabase Auth settings or try again later.");
+      } else {
+        setError(err.message);
+      }
     } finally {
       setIsLoading(false);
     }
