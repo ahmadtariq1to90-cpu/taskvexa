@@ -3,6 +3,8 @@ import { ArrowUp, CheckCircle2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 
+import { useNavigate } from "react-router-dom";
+
 import { Hero } from "../components/Hero";
 import { Features } from "../components/Features";
 import { HowItWorks } from "../components/HowItWorks";
@@ -11,11 +13,11 @@ import { Statistics } from "../components/Statistics";
 import { Screenshots } from "../components/Screenshots";
 import { Testimonials } from "../components/Testimonials";
 import { Referral } from "../components/Referral";
-import { Download } from "../components/Download";
 import { FAQ } from "../components/FAQ";
 import { Newsletter } from "../components/Newsletter";
 
 export function LandingPage() {
+  const navigate = useNavigate();
   const { scrollYProgress } = useScroll();
   const scaleX = useSpring(scrollYProgress, {
     stiffness: 100,
@@ -56,29 +58,12 @@ export function LandingPage() {
           .from('users')
           .select('id')
           .eq('id', session.user.id)
-          .single();
+          .maybeSingle();
           
         if (!user) {
-          // User logged in via Google but isn't in our DB yet.
-          // Auto-register them with default/empty values for the missing fields
-          const fullName = session.user.user_metadata?.full_name || "";
-          const nameParts = fullName.split(" ");
-          const firstName = nameParts.length > 0 ? nameParts[0] : "";
-          const lastName = nameParts.length > 1 ? nameParts.slice(1).join(" ") : "";
-          const referralCode = 'TV-' + Math.random().toString(36).substring(2, 8).toUpperCase();
-          
-          await supabase.from('users').insert([{
-            id: session.user.id,
-            email: session.user.email,
-            first_name: firstName,
-            last_name: lastName,
-            avatar_url: session.user.user_metadata?.avatar_url || "",
-            referral_code: referralCode
-          }]);
-          
-          // Show congratulations popup
-          setShowSuccessPopup(true);
-          window.history.replaceState(null, '', window.location.pathname);
+          // User logged in via Google or Email but isn't in our DB yet.
+          // Redirect them to the register page to complete their profile.
+          navigate('/register');
         } else {
           // If they just logged in and already exist, we can also show a welcome back or just the popup
           // We'll show it if there's a hash in the URL indicating a recent login
@@ -123,9 +108,6 @@ export function LandingPage() {
         <Screenshots />
         <Testimonials />
         <Referral />
-        <div id="download">
-          <Download />
-        </div>
         <FAQ />
         <Newsletter />
       </main>
@@ -157,7 +139,7 @@ export function LandingPage() {
               <button 
                 onClick={() => {
                   setShowSuccessPopup(false);
-                  document.getElementById('download')?.scrollIntoView({ behavior: 'smooth' });
+                  navigate('/download');
                 }}
                 className="w-full h-12 rounded-xl bg-gradient-primary text-white font-medium hover:shadow-lg hover:shadow-brand-500/25 transition-all"
               >

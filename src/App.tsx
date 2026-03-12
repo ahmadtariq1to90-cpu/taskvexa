@@ -7,6 +7,7 @@ import { RegisterPage } from "./pages/RegisterPage";
 import { PrivacyPolicy } from "./pages/PrivacyPolicy";
 import { TermsOfService } from "./pages/TermsOfService";
 import { SupportPage } from "./pages/SupportPage";
+import { DownloadPage } from "./pages/DownloadPage";
 import { ScrollToTop } from "./components/ScrollToTop";
 
 export default function App() {
@@ -20,6 +21,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/download" element={<DownloadPage />} />
           <Route path="/privacy-policy" element={<PrivacyPolicy />} />
           <Route path="/terms-of-service" element={<TermsOfService />} />
           <Route path="/support" element={<SupportPage />} />

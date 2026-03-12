@@ -357,8 +357,8 @@ export function RegisterPage() {
               <p className="text-gray-300 mb-8">
                 You are already registered. Please download the app and login.
               </p>
-              <Link to="/">
-                <Button className="w-full">Return to Home</Button>
+              <Link to="/download">
+                <Button className="w-full">Download App</Button>
               </Link>
             </div>
           </div>
@@ -392,15 +392,6 @@ export function RegisterPage() {
               >
                 Confirm Email
               </Button>
-              <button 
-                onClick={() => {
-                  setShowConfirmationPopup(false);
-                  setStep(4);
-                }}
-                className="text-gray-400 hover:text-white text-sm font-medium transition-colors"
-              >
-                I've already confirmed
-              </button>
             </motion.div>
           </motion.div>
         )}
@@ -902,8 +893,8 @@ export function RegisterPage() {
                   <p className="text-gray-300 text-lg mb-8 leading-relaxed">
                     "Congratulations! You are now part of our family. Download the application, log in, and start earning."
                   </p>
-                  <Link to="/" className="w-full">
-                    <Button className="w-full">Return to Home</Button>
+                  <Link to="/download" className="w-full">
+                    <Button className="w-full">Download App</Button>
                   </Link>
                 </motion.div>
               )}

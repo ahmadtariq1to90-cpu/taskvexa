@@ -96,9 +96,9 @@ export function Navbar() {
             </button>
             
             {session ? (
-              <a href="#download" className="text-sm font-medium text-gray-300 hover:text-brand-500 transition-colors mr-4">
+              <Link to="/download" className="text-sm font-medium text-gray-300 hover:text-brand-500 transition-colors mr-4">
                 Login
-              </a>
+              </Link>
             ) : (
               <Link to="/register">
                 <span className="text-sm font-medium text-gray-300 hover:text-brand-500 transition-colors mr-4">
@@ -106,7 +106,9 @@ export function Navbar() {
                 </span>
               </Link>
             )}
-            <Button variant="primary" size="sm">Download App</Button>
+            <Link to="/download">
+              <Button variant="primary" size="sm">Download App</Button>
+            </Link>
           </div>
 
           {/* Mobile Menu Toggle */}
@@ -153,9 +155,9 @@ export function Navbar() {
                 </a>
               ))}
               {session ? (
-                <a href="#download" onClick={() => setIsMobileMenuOpen(false)} className="text-lg font-medium text-gray-300 hover:text-brand-500 block mt-2">
+                <Link to="/download" onClick={() => setIsMobileMenuOpen(false)} className="text-lg font-medium text-gray-300 hover:text-brand-500 block mt-2">
                   Login
-                </a>
+                </Link>
               ) : (
                 <Link to="/register" onClick={() => setIsMobileMenuOpen(false)}>
                   <span className="text-lg font-medium text-gray-300 hover:text-brand-500 block mt-2">
@@ -163,7 +165,9 @@ export function Navbar() {
                   </span>
                 </Link>
               )}
-              <Button variant="primary" className="w-full mt-4">Download App</Button>
+              <Link to="/download" onClick={() => setIsMobileMenuOpen(false)}>
+                <Button variant="primary" className="w-full mt-4">Download App</Button>
+              </Link>
             </div>
           </motion.div>
         )}

@@ -34,10 +34,12 @@ export function Hero() {
             </p>
             
             <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4">
-              <Button size="lg" className="w-full sm:w-auto gap-2">
-                <Download size={20} />
-                Download App
-              </Button>
+              <Link to="/download" className="w-full sm:w-auto">
+                <Button size="lg" className="w-full gap-2">
+                  <Download size={20} />
+                  Download App
+                </Button>
+              </Link>
               <a href="#features" className="w-full sm:w-auto">
                 <Button variant="outline" size="lg" className="w-full gap-2">
                   Learn More
