@@ -16,7 +16,7 @@ export function Footer() {
           <div className="lg:col-span-1">
             <Link to="/" className="flex items-center gap-2 mb-6">
               <div className="w-10 h-10 rounded-xl bg-gradient-primary flex items-center justify-center text-white shadow-lg shadow-brand-500/20 overflow-hidden">
-                <img src="https://i.ibb.co/Z11nLgf7/afa1f338-5719-4327-b442-62334eec25b4-removebg-preview.png" alt="Taskvexa Logo" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                <img src="https://i.ibb.co/Gv8NMNnk/4efd2045-0146-46fd-9937-90b81ddcd94f-removebg-preview.png" alt="Taskvexa Logo" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
               </div>
               <span className="font-display font-bold text-2xl tracking-tight">Taskvexa</span>
             </Link>

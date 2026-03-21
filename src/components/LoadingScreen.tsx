@@ -32,7 +32,7 @@ export function LoadingScreen() {
             }}
             className="w-24 h-24 rounded-2xl bg-gradient-primary flex items-center justify-center shadow-[0_0_40px_rgba(45,212,191,0.5)] mb-8 overflow-hidden"
           >
-            <img src="https://i.ibb.co/Z11nLgf7/afa1f338-5719-4327-b442-62334eec25b4-removebg-preview.png" alt="Taskvexa Logo" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+            <img src="https://i.ibb.co/Gv8NMNnk/4efd2045-0146-46fd-9937-90b81ddcd94f-removebg-preview.png" alt="Taskvexa Logo" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
           </motion.div>
           
           <motion.div

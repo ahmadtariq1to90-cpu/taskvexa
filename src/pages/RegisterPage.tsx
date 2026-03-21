@@ -37,6 +37,7 @@ export function RegisterPage() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [enteredReferralCode, setEnteredReferralCode] = useState("");
+  const [referredBy, setReferredBy] = useState<string | null>(null);
   
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -69,26 +70,23 @@ export function RegisterPage() {
         return;
       }
 
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
-        if (authError || !authUser) {
-          await supabase.auth.signOut();
-          return;
-        }
-
+      // Use getUser() for real-time auth check instead of just getSession()
+      const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
+      
+      if (authUser && !authError) {
         const { data: user } = await supabase
           .from('users')
           .select('id')
-          .eq('id', session.user.id)
+          .eq('id', authUser.id)
           .maybeSingle();
         
         if (user) {
           setIsAlreadyRegistered(true);
         } else {
           // Authenticated but profile incomplete
-          setIsOAuth(!!session.user.app_metadata?.provider && session.user.app_metadata.provider !== 'email');
-          setEmail(session.user.email || "");
+          const { data: { session } } = await supabase.auth.getSession();
+          setIsOAuth(!!authUser.app_metadata?.provider && authUser.app_metadata.provider !== 'email');
+          setEmail(authUser.email || "");
           
           // Restore from localStorage if available
           const savedPhoneCountry = localStorage.getItem('reg_phoneCountry');
@@ -98,7 +96,7 @@ export function RegisterPage() {
           if (savedPhoneNumber) setPhoneNumber(savedPhoneNumber);
           if (savedReferral) setEnteredReferralCode(savedReferral);
 
-          const fullName = session.user.user_metadata?.full_name;
+          const fullName = authUser.user_metadata?.full_name;
           if (fullName) {
             const nameParts = fullName.split(" ");
             if (nameParts.length > 0) setFirstName(nameParts[0]);
@@ -200,6 +198,25 @@ export function RegisterPage() {
     return "";
   };
 
+  const checkEmailExists = async (emailToCheck: string) => {
+    if (!emailToCheck || !emailToCheck.includes("@")) return;
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('email')
+        .ilike('email', emailToCheck)
+        .maybeSingle();
+      
+      if (data) {
+        setError("This email is already registered. Please download the app and login.");
+        return true;
+      }
+    } catch (err) {
+      console.error("Error checking email:", err);
+    }
+    return false;
+  };
+
   const handleNextStep = async () => {
     const validationError = validateStep();
     if (validationError) {
@@ -211,12 +228,19 @@ export function RegisterPage() {
     if (step === 1) {
       setIsLoading(true);
       try {
-        const { data, error } = await supabase
+        // Real-time check against the users table
+        const { data, error: dbError } = await supabase
           .from('users')
           .select('email')
           .ilike('email', email)
           .maybeSingle();
           
+        if (dbError) {
+          console.error("Error checking email:", dbError);
+          // If there's a DB error, we might want to proceed or block. 
+          // Let's block to be safe if it's a real error.
+        }
+
         if (data) {
           setError("This email is already registered. Please download the app and login.");
           setIsLoading(false);
@@ -237,9 +261,42 @@ export function RegisterPage() {
   };
 
   const handleSignUp = async (skipReferral = false) => {
-    if (!skipReferral && enteredReferralCode && enteredReferralCode.length < 3) {
-       setError("Invalid referral code."); return;
+    if (!skipReferral) {
+      if (!enteredReferralCode) {
+        setError("Please enter a referral code or click Skip.");
+        return;
+      }
+      
+      setIsLoading(true);
+      setError("");
+      
+      try {
+        // Strict referral code validation
+        const { data: referrer, error: referrerError } = await supabase
+          .from('users')
+          .select('id, referral_code')
+          .eq('referral_code', enteredReferralCode.toUpperCase())
+          .maybeSingle();
+
+        if (referrerError) throw referrerError;
+        
+        if (!referrer) {
+          setError("Invalid referral code. This code does not exist.");
+          setIsLoading(false);
+          return;
+        }
+        
+        setReferredBy(referrer.referral_code);
+      } catch (err: any) {
+        setError("Error validating referral code: " + err.message);
+        setIsLoading(false);
+        return;
+      }
+    } else {
+      setReferredBy(null);
+      setEnteredReferralCode("");
     }
+
     setIsLoading(true);
     setError("");
     try {
@@ -315,6 +372,7 @@ export function RegisterPage() {
             gender: gender,
             avatar_url: avatarUrl,
             referral_code: referralCode,
+            referred_by: referredBy,
             occupation: occupation,
             reason: reason,
             work_time: workTime,
@@ -448,6 +506,7 @@ export function RegisterPage() {
                           type="email" 
                           value={email}
                           onChange={(e) => setEmail(e.target.value)}
+                          onBlur={(e) => checkEmailExists(e.target.value)}
                           disabled={isOAuth}
                           placeholder="you@gmail.com" 
                           className={`w-full h-12 pl-11 pr-4 rounded-xl glass bg-dark-900/50 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors ${isOAuth ? 'opacity-50 cursor-not-allowed' : ''}`}
@@ -615,7 +674,7 @@ export function RegisterPage() {
                       {isLoading ? "Loading..." : "Skip"}
                     </Button>
                     <Button onClick={() => handleSignUp(false)} disabled={isLoading} className="flex-1 gap-2">
-                      {isLoading ? "Loading..." : "Next"} <ArrowRight size={18} />
+                      {isLoading ? "Validating..." : "Next"} <ArrowRight size={18} />
                     </Button>
                   </div>
                 </motion.div>

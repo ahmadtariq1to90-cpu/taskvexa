@@ -76,7 +76,7 @@ export function Download() {
             {/* Download Overlay */}
             <div className="absolute inset-0 bg-gradient-to-t from-brand-900/90 via-transparent to-transparent flex flex-col justify-end p-8">
               <div className="w-16 h-16 rounded-2xl bg-brand-500 flex items-center justify-center mb-4 shadow-lg shadow-brand-500/50 mx-auto overflow-hidden">
-                <img src="https://i.ibb.co/Z11nLgf7/afa1f338-5719-4327-b442-62334eec25b4-removebg-preview.png" alt="Taskvexa Logo" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                <img src="https://i.ibb.co/Gv8NMNnk/4efd2045-0146-46fd-9937-90b81ddcd94f-removebg-preview.png" alt="Taskvexa Logo" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
               </div>
               <h3 className="text-2xl font-bold text-white text-center mb-2">Taskvexa</h3>
               <p className="text-brand-100 text-center text-sm">Make Money Online</p>
