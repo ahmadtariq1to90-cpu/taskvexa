@@ -92,9 +92,11 @@ export function RegisterPage() {
           const savedPhoneCountry = localStorage.getItem('reg_phoneCountry');
           const savedPhoneNumber = localStorage.getItem('reg_phoneNumber');
           const savedReferral = localStorage.getItem('reg_referralCode');
+          const savedReferredBy = localStorage.getItem('reg_referredBy');
           if (savedPhoneCountry) setPhoneCountry(savedPhoneCountry);
           if (savedPhoneNumber) setPhoneNumber(savedPhoneNumber);
           if (savedReferral) setEnteredReferralCode(savedReferral);
+          if (savedReferredBy) setReferredBy(savedReferredBy);
 
           const fullName = authUser.user_metadata?.full_name;
           if (fullName) {
@@ -287,6 +289,7 @@ export function RegisterPage() {
         }
         
         setReferredBy(referrer.referral_code);
+        localStorage.setItem('reg_referredBy', referrer.referral_code);
       } catch (err: any) {
         setError("Error validating referral code: " + err.message);
         setIsLoading(false);
@@ -302,21 +305,70 @@ export function RegisterPage() {
     try {
       localStorage.setItem('reg_phoneCountry', phoneCountry);
       localStorage.setItem('reg_phoneNumber', phoneNumber);
-      if (!skipReferral) localStorage.setItem('reg_referralCode', enteredReferralCode);
+      if (!skipReferral) {
+        localStorage.setItem('reg_referralCode', enteredReferralCode);
+      } else {
+        localStorage.removeItem('reg_referralCode');
+        localStorage.removeItem('reg_referredBy');
+      }
 
+      // Attempt to sign up
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
       });
+
+      // If user already exists in auth.users but registration was incomplete
+      if (authError && (authError.message.includes("already registered") || authError.status === 422)) {
+        // Try to sign in instead to resume registration
+        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (signInError) {
+          if (signInError.message.includes("Invalid login credentials")) {
+            throw new Error("This email is already registered with a different password.");
+          }
+          throw signInError;
+        }
+
+        if (signInData.user) {
+          // Check if profile exists
+          const { data: existingProfile } = await supabase
+            .from('users')
+            .select('id')
+            .eq('id', signInData.user.id)
+            .maybeSingle();
+          
+          if (existingProfile) {
+            setIsAlreadyRegistered(true);
+            setIsLoading(false);
+            return;
+          }
+          
+          // If no profile, proceed to step 4
+          setStep(4);
+          setIsLoading(false);
+          return;
+        }
+      }
+
       if (authError) throw authError;
       if (!authData.user) throw new Error("Failed to create user account.");
       
       if (authData.user.identities && authData.user.identities.length === 0) {
+        // This usually means email exists. Let's try to sign in to resume.
+        const { data: signInData } = await supabase.auth.signInWithPassword({ email, password });
+        if (signInData?.user) {
+           setStep(4);
+           setIsLoading(false);
+           return;
+        }
         throw new Error("Email already registered. Please download the app and login.");
       }
       
       if (authData.session) {
-        // Email confirmation is disabled in Supabase, user is logged in
         setStep(4);
       } else {
         setShowConfirmationPopup(true);
@@ -348,7 +400,9 @@ export function RegisterPage() {
       
       const userId = session.user.id;
       const avatarUrl = session.user.user_metadata?.avatar_url || "";
-      const referralCode = enteredReferralCode || ('TV-' + Math.random().toString(36).substring(2, 8).toUpperCase());
+      
+      // Generate a unique referral code for the new user
+      const myReferralCode = 'TV-' + Math.random().toString(36).substring(2, 8).toUpperCase();
 
       const monthIndex = months.indexOf(month) + 1;
       const formattedMonth = monthIndex < 10 ? `0${monthIndex}` : `${monthIndex}`;
@@ -371,7 +425,7 @@ export function RegisterPage() {
             date_of_birth: formattedDate,
             gender: gender,
             avatar_url: avatarUrl,
-            referral_code: referralCode,
+            referral_code: myReferralCode,
             referred_by: referredBy,
             occupation: occupation,
             reason: reason,
@@ -387,6 +441,7 @@ export function RegisterPage() {
       localStorage.removeItem('reg_phoneCountry');
       localStorage.removeItem('reg_phoneNumber');
       localStorage.removeItem('reg_referralCode');
+      localStorage.removeItem('reg_referredBy');
 
       setStep(8);
     } catch (err: any) {
@@ -662,7 +717,7 @@ export function RegisterPage() {
                       <input 
                         type="text" 
                         value={enteredReferralCode}
-                        onChange={(e) => setEnteredReferralCode(e.target.value)}
+                        onChange={(e) => setEnteredReferralCode(e.target.value.toUpperCase())}
                         placeholder="Enter code if you have one" 
                         className="w-full h-12 px-4 rounded-xl glass bg-dark-900/50 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors"
                       />
