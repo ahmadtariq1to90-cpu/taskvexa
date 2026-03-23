@@ -81,10 +81,21 @@ export function RegisterPage() {
           .maybeSingle();
         
         if (user) {
-          setIsAlreadyRegistered(true);
+          // Only show "Already Registered" if they have a full profile and we aren't in the middle of registering
+          if (step < 4) {
+            setIsAlreadyRegistered(true);
+          }
         } else {
           // Authenticated but profile incomplete
           const { data: { session } } = await supabase.auth.getSession();
+          
+          // Check if user is blocked (Supabase doesn't return blocked users in getUser usually, 
+          // but we check for session validity)
+          if (!session) {
+            await supabase.auth.signOut();
+            return;
+          }
+
           setIsOAuth(!!authUser.app_metadata?.provider && authUser.app_metadata.provider !== 'email');
           setEmail(authUser.email || "");
           
@@ -359,8 +370,15 @@ export function RegisterPage() {
       
       if (authData.user.identities && authData.user.identities.length === 0) {
         // This usually means email exists. Let's try to sign in to resume.
-        const { data: signInData } = await supabase.auth.signInWithPassword({ email, password });
-        if (signInData?.user) {
+        const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({ email, password });
+        if (signInData?.user && !signInErr) {
+           // Check if profile exists for this signed in user
+           const { data: prof } = await supabase.from('users').select('id').eq('id', signInData.user.id).maybeSingle();
+           if (prof) {
+             setIsAlreadyRegistered(true);
+             setIsLoading(false);
+             return;
+           }
            setStep(4);
            setIsLoading(false);
            return;
@@ -481,9 +499,23 @@ export function RegisterPage() {
               <p className="text-gray-300 mb-8">
                 You are already registered. Please download the app and login.
               </p>
-              <Link to="/download">
-                <Button className="w-full">Download App</Button>
-              </Link>
+              <div className="space-y-4">
+                <Link to="/download">
+                  <Button className="w-full">Download App</Button>
+                </Link>
+                <Button 
+                  variant="outline" 
+                  className="w-full"
+                  onClick={async () => {
+                    await supabase.auth.signOut();
+                    setIsAlreadyRegistered(false);
+                    setStep(1);
+                    window.location.reload();
+                  }}
+                >
+                  Logout & Try Again
+                </Button>
+              </div>
             </div>
           </div>
         </div>
