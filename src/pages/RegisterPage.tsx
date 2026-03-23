@@ -59,6 +59,11 @@ export function RegisterPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
+    setIsAlreadyRegistered(false);
+    setError("");
+  }, [email]);
+
+  useEffect(() => {
     const checkSession = async () => {
       const hashParams = new URLSearchParams(window.location.hash.substring(1));
       const searchParams = new URLSearchParams(window.location.search);
@@ -70,62 +75,67 @@ export function RegisterPage() {
         return;
       }
 
-      // Use getUser() for real-time auth check instead of just getSession()
-      const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
-      
-      if (authUser && !authError) {
-        const { data: user } = await supabase
-          .from('users')
-          .select('id')
-          .eq('id', authUser.id)
-          .maybeSingle();
+      try {
+        // Use getUser() for real-time auth check instead of just getSession()
+        const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
         
-        if (user) {
-          // Only show "Already Registered" if they have a full profile and we aren't in the middle of registering
-          if (step < 4) {
-            setIsAlreadyRegistered(true);
-          }
-        } else {
-          // Authenticated but profile incomplete
-          const { data: { session } } = await supabase.auth.getSession();
-          
-          // Check if user is blocked (Supabase doesn't return blocked users in getUser usually, 
-          // but we check for session validity)
-          if (!session) {
+        if (authError || !authUser) {
+          // If there's an error or no user, ensure we are signed out to clear stale sessions
+          if (authUser || (authError && authError.message.includes("JWT"))) {
             await supabase.auth.signOut();
-            return;
           }
-
-          setIsOAuth(!!authUser.app_metadata?.provider && authUser.app_metadata.provider !== 'email');
-          setEmail(authUser.email || "");
-          
-          // Restore from localStorage if available
-          const savedPhoneCountry = localStorage.getItem('reg_phoneCountry');
-          const savedPhoneNumber = localStorage.getItem('reg_phoneNumber');
-          const savedReferral = localStorage.getItem('reg_referralCode');
-          const savedReferredBy = localStorage.getItem('reg_referredBy');
-          if (savedPhoneCountry) setPhoneCountry(savedPhoneCountry);
-          if (savedPhoneNumber) setPhoneNumber(savedPhoneNumber);
-          if (savedReferral) setEnteredReferralCode(savedReferral);
-          if (savedReferredBy) setReferredBy(savedReferredBy);
-
-          const fullName = authUser.user_metadata?.full_name;
-          if (fullName) {
-            const nameParts = fullName.split(" ");
-            if (nameParts.length > 0) setFirstName(nameParts[0]);
-            if (nameParts.length > 1) setLastName(nameParts.slice(1).join(" "));
-          }
-          
-          setStep(4);
-          setShowConfirmationPopup(false);
+          setIsAlreadyRegistered(false);
+          return;
         }
+
+        if (authUser) {
+          const { data: user } = await supabase
+            .from('users')
+            .select('id')
+            .eq('id', authUser.id)
+            .maybeSingle();
+          
+          if (user) {
+            // Only show "Already Registered" if they have a full profile and we aren't in the middle of registering
+            if (step < 4) {
+              setIsAlreadyRegistered(true);
+            }
+          } else {
+            // Authenticated but profile incomplete, let them continue
+            setIsOAuth(!!authUser.app_metadata?.provider && authUser.app_metadata.provider !== 'email');
+            setEmail(authUser.email || "");
+            
+            // Restore from localStorage if available
+            const savedPhoneCountry = localStorage.getItem('reg_phoneCountry');
+            const savedPhoneNumber = localStorage.getItem('reg_phoneNumber');
+            const savedReferral = localStorage.getItem('reg_referralCode');
+            const savedReferredBy = localStorage.getItem('reg_referredBy');
+            if (savedPhoneCountry) setPhoneCountry(savedPhoneCountry);
+            if (savedPhoneNumber) setPhoneNumber(savedPhoneNumber);
+            if (savedReferral) setEnteredReferralCode(savedReferral);
+            if (savedReferredBy) setReferredBy(savedReferredBy);
+
+            const fullName = authUser.user_metadata?.full_name;
+            if (fullName) {
+              const nameParts = fullName.split(" ");
+              if (nameParts.length > 0) setFirstName(nameParts[0]);
+              if (nameParts.length > 1) setLastName(nameParts.slice(1).join(" "));
+            }
+            
+            // If we are at the beginning, move to step 4 to complete profile
+            if (step < 4) setStep(4);
+            setShowConfirmationPopup(false);
+          }
+        }
+      } catch (err) {
+        console.error("Session check error:", err);
       }
     };
     
     checkSession();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'SIGNED_IN') {
+      if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
         checkSession();
       }
     });
@@ -148,7 +158,7 @@ export function RegisterPage() {
       subscription.unsubscribe();
       window.removeEventListener('message', handleMessage);
     };
-  }, []);
+  }, [step]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -212,16 +222,24 @@ export function RegisterPage() {
   };
 
   const checkEmailExists = async (emailToCheck: string) => {
-    if (!emailToCheck || !emailToCheck.includes("@")) return;
+    if (!emailToCheck || !emailToCheck.includes("@")) return false;
     try {
       const { data, error } = await supabase
         .from('users')
-        .select('email')
+        .select('id')
         .ilike('email', emailToCheck)
         .maybeSingle();
       
       if (data) {
+        // Check if this profile belongs to a deleted auth user
+        // We can't easily check auth.users, but we can see if the current user matches
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (authUser && authUser.id === data.id) {
+          return false; // It's the current user's own profile
+        }
+        
         setError("This email is already registered. Please download the app and login.");
+        setIsAlreadyRegistered(true);
         return true;
       }
     } catch (err) {
@@ -419,6 +437,9 @@ export function RegisterPage() {
       const userId = session.user.id;
       const avatarUrl = session.user.user_metadata?.avatar_url || "";
       
+      // Get referred_by from state or localStorage as fallback
+      const finalReferredBy = referredBy || localStorage.getItem('reg_referredBy') || "";
+      
       // Generate a unique referral code for the new user
       const myReferralCode = 'TV-' + Math.random().toString(36).substring(2, 8).toUpperCase();
 
@@ -444,7 +465,7 @@ export function RegisterPage() {
             gender: gender,
             avatar_url: avatarUrl,
             referral_code: myReferralCode,
-            referred_by: referredBy,
+            referred_by: finalReferredBy,
             occupation: occupation,
             reason: reason,
             work_time: workTime,
@@ -499,23 +520,9 @@ export function RegisterPage() {
               <p className="text-gray-300 mb-8">
                 You are already registered. Please download the app and login.
               </p>
-              <div className="space-y-4">
-                <Link to="/download">
-                  <Button className="w-full">Download App</Button>
-                </Link>
-                <Button 
-                  variant="outline" 
-                  className="w-full"
-                  onClick={async () => {
-                    await supabase.auth.signOut();
-                    setIsAlreadyRegistered(false);
-                    setStep(1);
-                    window.location.reload();
-                  }}
-                >
-                  Logout & Try Again
-                </Button>
-              </div>
+              <Link to="/download">
+                <Button className="w-full">Download App</Button>
+              </Link>
             </div>
           </div>
         </div>
