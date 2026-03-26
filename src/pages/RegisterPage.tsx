@@ -91,11 +91,11 @@ export function RegisterPage() {
         if (authUser) {
           const { data: user } = await supabase
             .from('users')
-            .select('id')
+            .select('id, first_name')
             .eq('id', authUser.id)
             .maybeSingle();
           
-          if (user) {
+          if (user && user.first_name) {
             // Only show "Already Registered" if they have a full profile and we aren't in the middle of registering
             if (step < 4) {
               setIsAlreadyRegistered(true);
@@ -226,11 +226,11 @@ export function RegisterPage() {
     try {
       const { data, error } = await supabase
         .from('users')
-        .select('id')
+        .select('id, first_name')
         .ilike('email', emailToCheck)
         .maybeSingle();
       
-      if (data) {
+      if (data && data.first_name) {
         // Check if this profile belongs to a deleted auth user
         // We can't easily check auth.users, but we can see if the current user matches
         const { data: { user: authUser } } = await supabase.auth.getUser();
@@ -366,11 +366,11 @@ export function RegisterPage() {
           // Check if profile exists
           const { data: existingProfile } = await supabase
             .from('users')
-            .select('id')
+            .select('id, first_name')
             .eq('id', signInData.user.id)
             .maybeSingle();
           
-          if (existingProfile) {
+          if (existingProfile && existingProfile.first_name) {
             setIsAlreadyRegistered(true);
             setIsLoading(false);
             return;
@@ -391,8 +391,8 @@ export function RegisterPage() {
         const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({ email, password });
         if (signInData?.user && !signInErr) {
            // Check if profile exists for this signed in user
-           const { data: prof } = await supabase.from('users').select('id').eq('id', signInData.user.id).maybeSingle();
-           if (prof) {
+           const { data: prof } = await supabase.from('users').select('id, first_name').eq('id', signInData.user.id).maybeSingle();
+           if (prof && prof.first_name) {
              setIsAlreadyRegistered(true);
              setIsLoading(false);
              return;
